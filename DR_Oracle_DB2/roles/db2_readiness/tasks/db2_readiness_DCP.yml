@@ -1,0 +1,317 @@
+---
+- name: Bloque para validar variables definidas
+  run_once: true
+  block:
+    - name: Validar variable instance exista en inventario
+      ansible.builtin.fail:
+        msg: "La instancia ingresada no existe en el inventario."
+      when: instance not in groups
+
+- name: Bloque para validar variables definidas
+  when: >
+    ( inventory_hostname in groups[instance] )
+    and
+    ( inventory_hostname in groups['dcp'] or
+      inventory_hostname in groups['dca'] )
+  block:
+    - name: Definir variable db2_readiness_become_user
+      ansible.builtin.set_fact:
+        db2_readiness_become_user: "{{ usuario | default(instance) }}"
+
+    - name: Validar variables definidas
+      ansible.builtin.fail:
+        msg: "Variable {{ item }} no ha sido definida. Revisar el inventario creado."
+      when: vars[item] is undefined
+      loop:
+        - ansible_host
+        - instance
+        - db2_readiness_become_user
+  rescue:
+    - name: Error validando variables.
+      ansible.builtin.set_fact:
+        db2_readiness_error_flag: true
+
+- name: Definir variable datacenter y reporting_group.
+  ansible.builtin.set_fact:
+    db2_readiness_datacenter: "DCP"
+    db2_readiness_reporting_group: '{{ group_names | difference(db2_readiness_groups) }}'
+  when: >
+    ( inventory_hostname in groups['dcp'] or
+    inventory_hostname in groups['dca'] )
+    and
+    inventory_hostname in groups[instance]
+
+- name: Bloque para listar BDD en DCP
+  become: true
+  become_user: "{{ db2_readiness_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Obtener bases de datos en DCP
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 list db directory"
+      args:
+        executable: /usr/bin/bash
+      register: db2_readiness_bases_result
+      changed_when: false
+
+    - name: Parseo de variable listado bases de datos
+      ansible.builtin.set_fact:
+        db2_readiness_bases: "{{ db2_readiness_bases_result['stdout'] | regex_findall('Database alias\\s+= (.*)\\n') }}"
+      failed_when:
+        - db2_readiness_bases_result is undefined or
+          db2_readiness_bases_result['rc'] != 0
+  rescue:
+    - name: Error al obtener las bases de datos
+      ansible.builtin.set_fact:
+        db2_readiness_error_message:
+          '{{ db2_readiness_error_message + ["No se pudo obtener las bases de datos de la instancia en DCP."] }}'
+        db2_readiness_error_flag: true
+
+    - name: Detener ejecución
+      ansible.builtin.fail:
+        msg: "{{ db2_readiness_error_message }}"
+
+- name: Bloque para listar BDD en DCA
+  become: true
+  become_user: "{{ db2_readiness_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Obtener bases de datos en DCA
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 list db directory"
+      args:
+        executable: /usr/bin/bash
+      register: db2_readiness_bases_result
+      changed_when: false
+
+    - name: Parseo de variable listado bases de datos
+      ansible.builtin.set_fact:
+        db2_readiness_bases: "{{ db2_readiness_bases_result['stdout'] | regex_findall('Database alias\\s+= (.*)\\n') }}"
+      failed_when:
+        - db2_readiness_bases_result is undefined or
+          db2_readiness_bases_result['rc'] != 0
+  rescue:
+    - name: Error al obtener las bases de datos
+      ansible.builtin.set_fact:
+        db2_readiness_error_message:
+          '{{ db2_readiness_error_message + ["No se pudo obtener las bases de datos de la instancia en DCA."] }}'
+        db2_readiness_error_flag: true
+      delegate_to: "{{ item }}"
+      delegate_facts: true
+      loop: "{{ groups[db2_readiness_reporting_group[0]] }}"
+
+    - name: Detener ejecución
+      ansible.builtin.fail:
+        msg: "{{ db2_readiness_error_message }}"
+
+- name: Bloque para verificar rol de las bases
+  become: true
+  become_user: "{{ db2_readiness_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Verificar rol de las bases en DCP
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 get db config for {{ item }}"
+      args:
+        executable: /usr/bin/bash
+      register: db2_readiness_primary_result
+      loop: "{{ db2_readiness_bases }}"
+      changed_when: false
+
+    - name: Parseo de variables de bases en DCP
+      ansible.builtin.set_fact:
+        db2_readiness_parsed_primary: "{{ db2_readiness_parsed_primary | default([]) + [item['stdout']] }}"
+      loop: "{{ db2_readiness_primary_result['results'] }}"
+      loop_control:
+        label: "Parseando información de base {{ item.item }} en {{ inventory_hostname }}"
+      failed_when: db2_readiness_primary_result is undefined
+
+    - name: Parseo de variable rol DCP
+      ansible.builtin.set_fact:
+        db2_readiness_primary:
+          "{{ db2_readiness_primary | default([]) +
+          [{'name': item | regex_findall('Database Configuration for Database (.*)\\n') | first,
+          'state': item | regex_findall('HADR database role\\s*= (.*)\\n') | first}] }}"
+      loop: "{{ db2_readiness_parsed_primary | list }}"
+      loop_control:
+        label: "Parseando rol de base {{ item | regex_findall('Database Configuration for Database (.*)\\n') | first }} en {{ inventory_hostname }}"
+
+    - name: Validar rol primario en DCP.
+      ansible.builtin.fail:
+        msg: |
+          La base {{ item.name }} no se encuentra activa en DCP.
+      when: item.state == "STANDBY"
+      loop: "{{ db2_readiness_primary | list }}"
+
+  rescue:
+    - name: Error validando rol primario en DCP.
+      ansible.builtin.fail:
+        msg: No se ha podido verificar el rol de la instancia en DCP.
+      when: db2_readiness_primary_result is undefined
+
+    - name: Error validando rol primario en DCP.
+      ansible.builtin.fail:
+        msg: "La base se encuentra en estado STANDBY. Se debe ejecutar readiness de switchback."
+
+- name: Bloque para revisar logs
+  become: true
+  become_user: "{{ db2_readiness_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Revisar el log de la instancia
+      ansible.builtin.shell:
+        cmd: 'set -o pipefail && ~/sqllib/bin/db2diag -level "Severe, Error" -H 5m | ~/sqllib/bin/db2diag -fmt "Time: %{ts} %{level} : @{msg}\n"'
+      args:
+        executable: /usr/bin/bash
+      register: db2_readiness_logs_result
+      changed_when: false
+      failed_when: db2_readiness_logs_result['stdout'] != ""
+  rescue:
+    - name: Error en logs
+      ansible.builtin.set_fact:
+        db2_readiness_error_message:
+          '{{ db2_readiness_error_message + ["Existen logs de error/severe en las bases de datos de la instancia en DCP."] }}'
+        db2_readiness_error_flag: true
+
+- name: Bloque para obtener información del cluster
+  become: true
+  become_user: "{{ db2_readiness_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Obtener información de las bases en DCP
+      ansible.builtin.shell:
+        cmd: "~/sqllib/adm/db2pd -db {{ item.name }} -hadr"
+      args:
+        executable: /usr/bin/bash
+      register: db2_readiness_sincronizacion_result
+      changed_when: false
+      when: item.state != "STANDARD"
+      loop: "{{ db2_readiness_primary }}"
+      loop_control:
+        label: "Obteniendo información de la base {{ item.name }} en {{ inventory_hostname }}"
+
+# El bloque a continuación realiza el parseo y registro de las distintas variables a validar en las tareas posteriores.
+# Se utilizan los siguientes filtros y plugins, aplicados a la variable db2_readiness_sincronizacion_result:
+#   - regex_search: Utilizado para obtener el nombre de la base de datos. Solamente devuelve un resultado.
+#     Es obtenido de forma dinámica para cada componente del loop.
+#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_search_filter.html
+#   - regex_findall: Permite obtener todas las ocurrencias de una expresión regular. Se utiliza para obtener la
+#     información tanto de bases primarias con standby en cada una de las instancias.
+#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_findall_filter.html
+#   - combine: Combina un elemento vacío [] con el diccionario creado con la información parseada por los filtros y
+#     plugins detallados anteriormente.
+#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html
+    - name: Parseo de variables de bases en DCP
+      ansible.builtin.set_fact:
+        db2_readiness_parsed_facts: "{{ db2_readiness_parsed_facts | default([]) +
+          [[] | combine({'name': item['stdout'] | regex_search('Database Member 0 -- Database (.*) -- Active', '\\1') | first,
+          'connected': item['stdout'] | regex_findall('HADR_CONNECT_STATUS = (.*)\\n'),
+          'peered': item['stdout'] | regex_findall('HADR_STATE = (.*)\\n'),
+          'syncmode': item['stdout'] | regex_findall('HADR_SYNCMODE = (.*)\\n'),
+          'logs_primary': item['stdout'] | regex_findall('PRIMARY_LOG_FILE,PAGE,POS = (.*)\\n'),
+          'logs_secondary': item['stdout'] | regex_findall('STANDBY_LOG_FILE,PAGE,POS = (.*)\\n')}, list_merge='append')] }}"
+      when: item['stdout'] is defined
+      loop: "{{ db2_readiness_sincronizacion_result['results'] | list }}"
+      loop_control:
+        label: "Parseando información de la base {{ item.item.name }} en {{ inventory_hostname }}"
+
+# El bloque a continuación combina las variables db2_readiness_parsed_facts y db2_readiness_primary
+# en un solo diccionario llamado db2_readiness_facts. Para esto se utiliza:
+#   - selectattr: Utilizado para encontrar (parámetro 'search') dentro de la lista db2_readiness_parsed_facts
+#     el diccionario que tenga la llave 'name' con un valor que se corresponda con el valor de item.name.
+#     Con este proceso, se asegura que los datos recopilados en ambas variables se correspondan mediante
+#     el nombre de la base de datos.
+#     https://docs.ansible.com/ansible/latest/playbook_guide/complex_data_manipulation.html#loops-and-list-comprehensions
+    - name: Unión de diccionarios parseados
+      ansible.builtin.set_fact:
+        db2_readiness_facts: "{{ db2_readiness_facts | default([]) +
+          [db2_readiness_parsed_facts | selectattr('name', 'search', item.name) | combine(item)] }}"
+      loop: "{{ db2_readiness_primary }}"
+      when: item.state != "STANDARD"
+
+- name: Bloque para verificar estado de conexión en el nodo primario
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Fallo en conexión en nodo de DCP
+      ansible.builtin.fail:
+        msg:
+          "La base {{ item.name }} está en estado
+          {{ item.connected | difference(['CONNECTED']) | flatten }}"
+      loop: "{{ db2_readiness_facts | list }}"
+      when:
+        - item.connected | difference(['CONNECTED'])
+        - item.state != "STANDARD"
+  rescue:
+    - name: Error en conexión en nodo de DCP
+      ansible.builtin.set_fact:
+        db2_readiness_error_message:
+          '{{ db2_readiness_error_message +
+          ["La base de la instancia en DCP se encuentra en un estado diferente a CONNECTED."] }}'
+        db2_readiness_error_flag: true
+
+- name: Bloque para verificar estado de sincronización en el nodo primario
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Fallo en sincronización en nodo de DCP
+      ansible.builtin.fail:
+        msg:
+          "La sincronización de la base {{ item.name }} del nodo en DCP se encuentra en
+          estado {{ item.peered | difference(['PEER', 'REMOTE_CATCHUP']) | flatten }}."
+      loop: "{{ db2_readiness_facts | list }}"
+      when:
+        - item.peered | difference(['PEER', 'REMOTE_CATCHUP'])
+        - item.state != "STANDARD"
+  rescue:
+    - name: Error en sincronización en nodo de DCP
+      ansible.builtin.set_fact:
+        db2_readiness_error_message:
+          '{{ db2_readiness_error_message + ["La sincronización de la base del nodo en DCP no se encuentra en estado PEER/REMOTE CATCHUP."] }}'
+        db2_readiness_error_flag: true
+
+- name: Bloque para verificar modo de sincronización en el nodo primario
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Fallo en modo de sincronización en nodo de DCP
+      ansible.builtin.fail:
+        msg:
+          "La sincronización de la base {{ item.name }} del nodo en DCP se encuentra en estado
+          {{ item.syncmode | difference(['NEARSYNC', 'SUPERASYNC']) | flatten }}."
+      loop: "{{ db2_readiness_facts | list }}"
+      when:
+        - item.syncmode | difference(['NEARSYNC', 'SUPERASYNC'])
+        - item.state != "STANDARD"
+
+  rescue:
+    - name: Error en sincronización en nodo de DCP
+      ansible.builtin.set_fact:
+        db2_readiness_error_message:
+          '{{ db2_readiness_error_message +
+          ["El modo de sincronización de la base de la instancia en DCP no se encuentra en estado NEARSYNC/SUPERASYNC."] }}'
+        db2_readiness_error_flag: true
+
+- name: Imprimiendo errores
+  ansible.builtin.fail:
+    msg: "{{ db2_readiness_error_message | list }}"
+  when: db2_readiness_error_flag
+...

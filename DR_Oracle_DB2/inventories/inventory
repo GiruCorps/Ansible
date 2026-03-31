@@ -1,0 +1,56 @@
+---
+# Cada grupo es denominado como la instancia de base de datos y
+# debe incluir los servidores en DCP y los servidores en DCA.
+# Los servidores serán asignados un nombre de acuerdo a su
+# FQDN. Si el nombre de una instancia coincide con el nombre de otra instancia,
+# entonces el nombre a registrar se añade el nombre de la aplicación al final.
+# Ejemplo:
+# hostname1: server1_dcp.example.com
+# nombre de instancia1: db2instance1
+# hostname2: server2_dcp.example.com
+# nombre de instancia2: db2instance1
+# nombres a registrar en inventario: 
+# grupo1: db2instance1_app1
+# grupo2: db2instance1_app2
+
+# Para cada uno de los servidores que componen los grupos, se deberá registrar la variable
+# ansible_host la cual es la IP del servidor.
+
+# Cada grupo debe tener como variable el nombre del usuario administrador
+# de la base de datos, el cual será utilizado para enviar los comandos 
+# necesarios para las actividades a automatizar. Esta variable se denominará "usuario"
+
+# grupo de ejemplo "instancia1"
+#  db2instance1_app1:
+#    hosts:
+#      server1_dcp.example.com:
+#        ansible_host: 10.10.10.10
+#      server1_dca.example.com:
+#        ansible_host: 10.50.10.10
+#    vars:
+#      usuario: bdadmin
+
+# grupo de ejemplo "instancia2"
+#  db2instance1_app2:
+#    hosts:
+#      server2_dcp.example.com:
+#        ansible_host: 10.10.10.20
+#      server2_dca.example.com:
+#        ansible_host: 10.50.10.20
+#    vars:
+#      usuario: bdadmin
+
+# Finalmente, se crearán dos grupos: "dcp" y "dca", en los cuales se registrarán los 
+# servidores "master" o principales de cada datacenter.
+
+# dcp:
+#   hosts:
+#     server1_dcp.example.com:
+#     server2_dcp.example.com:
+#
+# dca:
+#   hosts:
+#     server1_dca.example.com:
+#     server2_dca.example.com:
+
+...

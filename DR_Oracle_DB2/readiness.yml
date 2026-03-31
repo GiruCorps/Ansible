@@ -1,0 +1,8 @@
+---
+- name: Playbook de ejecución de readiness para Db2
+  hosts: all
+  gather_facts: false
+
+  roles:
+    - role: db2_readiness
+...

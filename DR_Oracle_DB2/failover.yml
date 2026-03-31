@@ -1,0 +1,9 @@
+---
+- name: Failover Master playbook
+  hosts: all
+  any_errors_fatal: true
+  gather_facts: false
+
+  roles:
+    - role: db2_failover
+...

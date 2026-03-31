@@ -1,0 +1,13 @@
+---
+db2_switchover_error_message_pre: []
+db2_switchover_error_message_post: []
+db2_switchover_error_flag_pre: false
+db2_switchover_error_flag_post: false
+
+db2_switchover_parsed_list: []
+db2_switchover_sincronizacion: []
+db2_switchover_estado: []
+db2_switchover_modo_sincronizacion: []
+db2_switchover_logs_primary: []
+db2_switchover_logs_secondary: []
+...

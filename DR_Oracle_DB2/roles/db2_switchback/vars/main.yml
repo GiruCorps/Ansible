@@ -1,0 +1,13 @@
+---
+db2_switchback_error_message_pre: []
+db2_switchback_error_message_post: []
+db2_switchback_error_flag_pre: false
+db2_switchback_error_flag_post: false
+
+db2_switchback_parsed_list: []
+db2_switchback_sincronizacion: []
+db2_switchback_estado: []
+db2_switchback_modo_sincronizacion: []
+db2_switchback_logs_primary: []
+db2_switchback_logs_secondary: []
+...

@@ -1,0 +1,499 @@
+---
+- name: Bloque para validar variables definidas
+  run_once: true
+  block:
+    - name: Validar variable instance exista en inventario
+      ansible.builtin.fail:
+        msg: "La instancia ingresada no existe en el inventario."
+      when: instance not in groups
+
+    - name: Validar variable instance no sea "all"
+      ansible.builtin.fail:
+        msg: "La variable instance no puede ser 'all'."
+      when: instance|upper == "ALL"
+      register: db2_switchback_validacion_instance
+  rescue:
+    - name: Variable instance no existe en inventario
+      ansible.builtin.meta: end_play
+      when: instance not in groups
+
+    - name: Variable instance is "all"
+      ansible.builtin.meta: end_play
+      when: db2_switchback_validacion_instance is defined
+
+- name: Bloque para validar variables definidas
+  when: inventory_hostname in groups[instance]
+  block:
+    - name: Definir variable db2_switchback_become_user
+      ansible.builtin.set_fact:
+        db2_switchback_become_user: "{{ usuario | default(instance) }}"
+
+    - name: Validar variables definidas
+      ansible.builtin.fail:
+        msg: "Variable {{ item }} no ha sido definida. Revisar el inventario creado."
+      when: vars[item] is undefined
+      loop:
+        - ansible_host
+        - instance
+        - db2_switchback_become_user
+  rescue:
+    - name: Error validando variables.
+      ansible.builtin.set_fact:
+        db2_switchback_error_flag_pre: true
+
+    - name: Variables no definidas
+      ansible.builtin.meta: end_play
+
+- name: Bloque para listar BDD en DCA
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when: >
+    ( ( inventory_hostname in groups['dcp'] or
+    inventory_hostname in groups['dca'] ) and
+    inventory_hostname in groups[instance] )
+  block:
+    - name: Obtener bases de datos en DCA
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 list db directory"
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_bases_result
+      changed_when: false
+
+    - name: Parseo de variable listado bases de datos
+      ansible.builtin.set_fact:
+        db2_switchback_bases: "{{ db2_switchback_bases_result['stdout'] | regex_findall('Database alias\\s+= (.*)\\n') }}"
+      failed_when:
+        - db2_switchback_bases_result is undefined or
+          db2_switchback_bases_result['rc'] != 0
+  rescue:
+    - name: Error al obtener las bases de datos
+      ansible.builtin.set_fact:
+        db2_switchback_error_message_pre:
+          '{{ db2_switchback_error_message_pre + ["No se pudo obtener las bases de datos de la instancia en DCA."] }}'
+        db2_switchback_error_flag_pre: true
+
+    - name: Detener ejecución
+      ansible.builtin.fail:
+        msg: "{{ db2_switchback_error_message_pre }}"
+
+- name: Bloque para verificar rol de la base en DCA antes del movimiento
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Verificar rol de las bases en DCA antes del movimiento
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 get db config for {{ item }}"
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_primary_result
+      loop: "{{ db2_switchback_bases }}"
+      changed_when: false
+
+    - name: Parseo de variables de bases en DCA pre movimiento
+      ansible.builtin.set_fact:
+        db2_switchback_parsed_primary: "{{ db2_switchback_parsed_primary | default([]) + [item['stdout']] }}"
+      loop: "{{ db2_switchback_primary_result['results'] }}"
+      loop_control:
+        label: "Parseando información de base {{ item.item }} en {{ inventory_hostname }}"
+      failed_when: db2_switchback_primary_result is undefined
+
+    - name: Parseo de variable rol DCA pre movimiento
+      ansible.builtin.set_fact:
+        db2_switchback_primary:
+          "{{ db2_switchback_primary | default([]) +
+          [{'name': item | regex_findall('Database Configuration for Database (.*)\\n') | first,
+          'state': item | regex_findall('HADR database role\\s*= (.*)\\n') | first}] }}"
+      loop: "{{ db2_switchback_parsed_primary | list }}"
+      loop_control:
+        label: "Parseando rol de base {{ item | regex_findall('Database Configuration for Database (.*)\\n') | first }} en {{ inventory_hostname }}"
+
+    - name: Validar rol primario en DCA pre movimiento.
+      ansible.builtin.fail:
+        msg: |
+          La base {{ item.name }} no se encuentra activa en DCA.
+      when: item.state == "STANDBY"
+      loop: "{{ db2_switchback_primary | list }}"
+
+  rescue:
+    - name: Error validando rol primario en DCA pre movimiento.
+      ansible.builtin.fail:
+        msg: No se ha podido verificar el rol de la instancia en DCA.
+      when: db2_switchback_primary_result is undefined
+
+    - name: Error validando rol primario en DCA pre movimiento.
+      ansible.builtin.fail:
+        msg: "La base en DCA se encuentra en estado STANDBY. Se debe ejecutar switchover."
+
+- name: Bloque para verificar que no existan conexiones a la base de datos
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Verificar que no existan conexiones a la base de datos
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 list applications"
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_applications_result
+      changed_when: false
+      failed_when: "'SQL1611W' not in db2_switchback_applications_result['stdout']"
+  rescue:
+    - name: Error validando que no existan conexiones a la base de datos.
+      ansible.builtin.set_fact:
+        db2_switchback_error_message_pre:
+          '{{ db2_switchback_error_message_pre + ["Existen aplicaciones conectadas a la instancia en DCA."] }}'
+        db2_switchback_error_flag_pre: true
+
+- name: Bloque para verificar rol de la base en DCP antes del movimiento
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Obtener información de las bases en DCP antes del movimiento
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 get db config for {{ item }}"
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_secondary_result
+      loop: "{{ db2_switchback_bases }}"
+      changed_when: false
+
+    - name: Parseo de variables de bases en DCP pre movimiento
+      ansible.builtin.set_fact:
+        db2_switchback_parsed_secondary: "{{ db2_switchback_parsed_secondary | default([]) + [item['stdout']] }}"
+      loop: "{{ db2_switchback_secondary_result['results'] }}"
+      loop_control:
+        label: "Parseando información de base {{ item.item }} en {{ inventory_hostname }}"
+      failed_when: db2_switchback_secondary_result is undefined
+
+    - name: Parseo de variable rol DCP pre movimiento
+      ansible.builtin.set_fact:
+        db2_switchback_secondary:
+          "{{ db2_switchback_secondary | default([]) +
+          [{'name': item | regex_findall('Database Configuration for Database (.*)\\n') | first,
+          'state': item | regex_findall('HADR database role\\s*= (.*)\\n') | first}] }}"
+      loop: "{{ db2_switchback_parsed_secondary | list }}"
+      loop_control:
+        label: "Parseando rol de base {{ item | regex_findall('Database Configuration for Database (.*)\\n') | first }} en {{ inventory_hostname }}"
+
+    - name: Validar rol primary en DCP.
+      ansible.builtin.fail:
+        msg: "La base {{ item.name }} se encuentra activa en DCP."
+      when: item.state == "PRIMARY"
+      loop: "{{ db2_switchback_secondary | list }}"
+
+  rescue:
+    - name: Error validando rol standby en DCP.
+      ansible.builtin.fail:
+        msg: "No se ha podido verificar el rol de la instancia en DCP."
+      when: db2_switchback_parsed_secondary is undefined
+
+    - name: Error validando rol standby en DCP.
+      ansible.builtin.fail:
+        msg: "La base en DCP se encuentra en estado PRIMARY. Se debe ejecutar switchover."
+
+- name: Bloque para verificar estado de conexión en el nodo primario
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Obtener información del cluster Db2
+      ansible.builtin.shell:
+        cmd: "~/sqllib/adm/db2pd -db {{ item.name }} -hadr"
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_sincronizacion_result
+      changed_when: false
+      loop: "{{ db2_switchback_primary }}"
+      loop_control:
+        label: "Obteniendo información de la base {{ item.name }} en {{ inventory_hostname }}"
+      when: item.state != "STANDARD"
+
+# El bloque a continuación realiza el parseo y registro de las distintas variables a validar en las tareas posteriores.
+# Se utilizan los siguientes filtros y plugins, aplicados a la variable db2_readiness_sincronizacion_result:
+#   - regex_search: Utilizado para obtener el nombre de la base de datos. Solamente devuelve un resultado.
+#     Es obtenido de forma dinámica para cada componente del loop.
+#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_search_filter.html
+#   - regex_findall: Permite obtener todas las ocurrencias de una expresión regular. Se utiliza para obtener la
+#     información tanto de bases primarias con standby en cada una de las instancias.
+#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/regex_findall_filter.html
+#   - combine: Combina un elemento vacío [] con el diccionario creado con la información parseada por los filtros y
+#     plugins detallados anteriormente.
+#     https://docs.ansible.com/ansible/latest/collections/ansible/builtin/combine_filter.html
+    - name: Parseo de variables de bases en DCP
+      ansible.builtin.set_fact:
+        db2_switchback_parsed_facts: "{{ db2_switchback_parsed_facts | default([]) +
+          [[] | combine({'name': item['stdout'] | regex_search('Database Member 0 -- Database (.*) -- Active', '\\1') | first,
+          'connected': item['stdout'] | regex_findall('HADR_CONNECT_STATUS = (.*)\\n'),
+          'peered': item['stdout'] | regex_findall('HADR_STATE = (.*)\\n'),
+          'syncmode': item['stdout'] | regex_findall('HADR_SYNCMODE = (.*)\\n'),
+          'logs_primary': item['stdout'] | regex_findall('PRIMARY_LOG_FILE,PAGE,POS = (.*)\\n'),
+          'logs_secondary': item['stdout'] | regex_findall('STANDBY_LOG_FILE,PAGE,POS = (.*)\\n')}, list_merge='append')] }}"
+      loop: "{{ db2_switchback_sincronizacion_result['results'] | list }}"
+      when: item['stdout'] is defined
+      loop_control:
+        label: "Parseando información de la base {{ item.item.name }} en {{ inventory_hostname }}"
+
+# El bloque a continuación combina las variables db2_readiness_parsed_facts y db2_readiness_primary
+# en un solo diccionario llamado db2_readiness_facts. Para esto se utiliza:
+#   - selectattr: Utilizado para encontrar (parámetro 'search') dentro de la lista db2_readiness_parsed_facts
+#     el diccionario que tenga la llave 'name' con un valor que se corresponda con el valor de item.name.
+#     Con este proceso, se asegura que los datos recopilados en ambas variables se correspondan mediante
+#     el nombre de la base de datos.
+#     https://docs.ansible.com/ansible/latest/playbook_guide/complex_data_manipulation.html#loops-and-list-comprehensions
+    - name: Unión de diccionarios parseados
+      ansible.builtin.set_fact:
+        db2_switchback_facts: "{{ db2_switchback_facts | default([]) +
+          [db2_switchback_parsed_facts | selectattr('name', 'search', item.name) | combine(item)] }}"
+      loop: "{{ db2_switchback_primary }}"
+      when: item.state != "STANDARD"
+
+    - name: Paso de variables a DCP
+      ansible.builtin.set_fact:
+        db2_switchback_facts_dcp: "{{ db2_switchback_facts }}"
+      loop: "{{ groups[instance] }}"
+      delegate_to: "{{ item }}"
+      delegate_facts: true
+
+- name: Bloque para verificar estado de conexión en el nodo primario
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Fallo en conexión en nodo de DCA
+      ansible.builtin.fail:
+        msg:
+          "La base {{ item.name }} está en estado
+          {{ item.connected | difference(['CONNECTED']) | flatten }}"
+      loop: "{{ db2_switchback_facts | list }}"
+      when:
+        - item.connected | difference(['CONNECTED'])
+        - item.state != "STANDARD"
+  rescue:
+    - name: Error en conexión en nodo de DCA
+      ansible.builtin.set_fact:
+        db2_switchback_error_message_pre:
+          '{{ db2_switchback_error_message_pre +
+          ["La base de la instancia en DCA se encuentra en un estado diferente a CONNECTED."] }}'
+        db2_switchback_error_flag_pre: true
+
+- name: Bloque para verificar estado de sincronización en el nodo primario
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Fallo en sincronización en nodo de DCA
+      ansible.builtin.fail:
+        msg:
+          "La sincronización de la base {{ item.name }} del nodo en DCAse encuentra en
+          estado {{ item.peered | difference(['PEER', 'REMOTE_CATCHUP']) | flatten }}."
+      loop: "{{ db2_switchback_facts | list }}"
+      when:
+        - item.peered | difference(['PEER', 'REMOTE_CATCHUP'])
+        - item.state != "STANDARD"
+  rescue:
+    - name: Error en sincronización en nodo de DCA
+      ansible.builtin.set_fact:
+        db2_switchback_error_message_pre:
+          '{{ db2_switchback_error_message_pre + ["La sincronización de la base del nodo en DCP no se encuentra en estado PEER/REMOTE CATCHUP."] }}'
+        db2_switchback_error_flag_pre: true
+
+- name: Bloque para verificar modo de sincronización en el nodo primario
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Fallo en modo de sincronización en nodo de DCA
+      ansible.builtin.fail:
+        msg:
+          "La sincronización de la base {{ item.name }} del nodo en DCA se encuentra en estado
+          {{ item.syncmode | difference(['NEARSYNC', 'SUPERASYNC']) | flatten }}."
+      loop: "{{ db2_switchback_facts | list }}"
+      when:
+        - item.syncmode | difference(['NEARSYNC', 'SUPERASYNC'])
+        - item.state != "STANDARD"
+  rescue:
+    - name: Error en sincronización en nodo de DCA
+      ansible.builtin.set_fact:
+        db2_switchback_error_message_pre:
+          '{{ db2_switchback_error_message_pre +
+          ["El modo de sincronización de la base de la instancia en DCP no se encuentra en estado NEARSYNC/SUPERASYNC."] }}'
+        db2_switchback_error_flag_pre: true
+
+- name: Bloque para verificar sincronización de logs en el nodo primario
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Fallo en validación de sincronización de logs
+      ansible.builtin.fail:
+        msg: "La información de logs entre base primaria y standby no es idéntica en la base item.name."
+      loop: "{{ db2_switchback_facts | list }}"
+      when:
+        - item.logs_primary != item.logs_secondary
+        - item.state != "STANDARD"
+  rescue:
+    - name: Error en sincronización de logs
+      ansible.builtin.set_fact:
+        db2_switchback_error_message_pre:
+          '{{ db2_switchback_error_message_pre + ["La información de logs entre base primaria y standby no es idéntica."] }}'
+        db2_switchback_error_flag_pre: true
+      loop: "{{ db2_switchback_facts | list }}"
+      when:
+        - item.logs_primary != item.logs_secondary
+        - item.state != "STANDARD"
+
+- name: Imprimiendo errores pre movimiento
+  ansible.builtin.fail:
+    msg: "{{ db2_switchback_error_message_pre | list }}"
+  when: db2_switchback_error_flag_pre
+
+- name: Bloque para cambio de rol
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Realizar cambio de rol por cada base
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 takeover hadr on database {{ item.name }}"
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_movimiento
+      loop: "{{ db2_switchback_facts_dcp }}"
+      changed_when: "'DB20000I' in db2_switchback_movimiento['stdout']"
+      failed_when: "'DB20000I' not in db2_switchback_movimiento['stdout']"
+      when:
+        - item.state == "PRIMARY"
+  rescue:
+    - name: Error durante el movimiento.
+      ansible.builtin.set_fact:
+        db2_switchback_error_flag_post: true
+
+    - name: Error durante el movimiento.
+      ansible.builtin.fail:
+        msg: |
+          No se ha podido realizar el movimiento. El error reportado es:
+          "{{ db2_switchback_movimiento['stdout'] }}"
+
+- name: Bloque para parseo de variables post movimiento
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Verificar rol de las bases despues del movimiento
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 get db config for {{ item.name }}"
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_primary_post_result
+      loop: "{{ db2_switchback_facts_dcp }}"
+      changed_when: false
+
+    - name: Parseo de variables de bases post movimiento
+      ansible.builtin.set_fact:
+        db2_switchback_parsed_primary_post: "{{ db2_switchback_parsed_primary_post | default([]) + [item['stdout']] }}"
+      loop: "{{ db2_switchback_primary_post_result['results'] }}"
+      loop_control:
+        label: "Parseando información de base {{ item.item }} en {{ inventory_hostname }}"
+      failed_when: db2_switchback_primary_post_result is undefined
+
+    - name: Parseo de variable rol post movimiento
+      ansible.builtin.set_fact:
+        db2_switchback_primary_post:
+          "{{ db2_switchback_primary_post | default([]) +
+          [{'name': item | regex_findall('Database Configuration for Database (.*)\\n') | first,
+          'state': item | regex_findall('HADR database role\\s*= (.*)\\n') | first}] }}"
+      loop: "{{ db2_switchback_parsed_primary_post | list }}"
+      loop_control:
+        label: "Parseando rol de base {{ item | regex_findall('Database Configuration for Database (.*)\\n') | first }} en {{ inventory_hostname }}"
+
+  rescue:
+    - name: Error validando rol primario.
+      ansible.builtin.fail:
+        msg: No se ha podido verificar el rol de la instancia.
+      when: db2_switchback_primary_post_result is undefined
+
+- name: Bloque para revisar roles post movimiento
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Validar rol primary en DCP post movimiento.
+      ansible.builtin.fail:
+        msg: |
+          La base {{ item.name }} en DCP NO ES INSTANCIA PRIMARY.
+          Se ejecutó el switchback pero no se realizó el cambio de rol.
+      when:
+        - item.state != "PRIMARY"
+        - inventory_hostname in groups['dcp']
+      loop: "{{ db2_switchback_primary_post | list }}"
+
+    - name: Validar rol standard en DCA post movimiento.
+      ansible.builtin.fail:
+        msg: |
+          La base {{ item.name }} NO ES INSTANCIA STANDBY después del movimiento.
+          Se ejecutó el switchback pero no se realizó el cambio de rol.
+      when:
+        - inventory_hostname not in groups['dcp']
+        - item.state != "STANDBY"
+        - item.state != "STANDARD"
+      loop: "{{ db2_switchback_primary_post | list }}"
+
+  rescue:
+    - name: Error validando rol primary en DCP.
+      ansible.builtin.set_fact:
+        db2_switchback_error_flag_pre: true
+        db2_switchback_error_message_post: "{{ db2_switchback_error_message_post | default([]) +
+          ['El rol de la base después del movimiento no es el esperado.'] }}"
+
+- name: Bloque para revisar contenido de logs
+  become: true
+  become_user: "{{ db2_switchback_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Revisar el contenido de los logs de la instancia
+      ansible.builtin.shell:
+        cmd: 'set -o pipefail && ~/sqllib/bin/db2diag -level "Severe, Error" -H 5m | ~/sqllib/bin/db2diag -fmt "Time: %{ts} %{level} : @{msg}\n"'
+      args:
+        executable: /usr/bin/bash
+      register: db2_switchback_logs_result
+      changed_when: false
+      failed_when: db2_switchback_logs_result['stdout'] != ""
+  rescue:
+    - name: Error en logs
+      ansible.builtin.set_fact:
+        db2_switchback_error_message_post:
+          '{{ db2_switchback_error_message_post | default([]) +
+          ["Existen logs de error/severe en las bases de datos de la instancia en DCA."] }}'
+        db2_switchback_error_flag_post: true
+
+- name: Imprimiendo errores post movimiento
+  ansible.builtin.fail:
+    msg: "{{ db2_switchback_error_message_post | list }}"
+  when: db2_switchback_error_flag_post
+...

@@ -1,0 +1,16 @@
+---
+db2_readiness_parsed_list: []
+db2_readiness_sincronizacion: []
+db2_readiness_estado: []
+db2_readiness_modo_sincronizacion: []
+db2_readiness_logs_primary: []
+db2_readiness_logs_secondary: []
+db2_readiness_conected: []
+
+db2_readiness_error_message: []
+db2_readiness_error_flag: false
+
+db2_readiness_groups:
+  - "dcp"
+  - "dca"
+...

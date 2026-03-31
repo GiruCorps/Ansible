@@ -1,0 +1,13 @@
+---
+# Ejecuta validación para DCP
+- name: Importar tareas de db2_readiness DCP
+  ansible.builtin.import_tasks: db2_readiness_DCP.yml
+  tags:
+    - db2_readiness_DCP
+
+# Ejecuta validación para DCA
+- name: Importar tareas de db2_readiness DCA
+  ansible.builtin.import_tasks: db2_readiness_DCA.yml
+  tags:
+    - db2_readiness_DCA
+...

@@ -1,0 +1,269 @@
+---
+- name: Bloque para validar variables definidas
+  run_once: true
+  block:
+    - name: Validar variable instance exista en inventario
+      ansible.builtin.fail:
+        msg: "La instancia ingresada no existe en el inventario."
+      when: instance not in groups
+
+    - name: Validar variable instance no sea "all"
+      ansible.builtin.fail:
+        msg: "La variable instance no puede ser 'all'."
+      when: instance|upper == "ALL"
+      register: db2_failover_validacion_instance
+
+  rescue:
+    - name: Variable instance no existe en inventario
+      ansible.builtin.meta: end_play
+      when: instance not in groups
+
+    - name: Variable instance is "all"
+      ansible.builtin.meta: end_play
+      when: db2_failover_validacion_instance is defined
+
+- name: Bloque para validar variables definidas
+  when:
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Definir variable db2_failover_become_user
+      ansible.builtin.set_fact:
+        db2_failover_become_user: "{{ usuario | default(instance) }}"
+
+    - name: Validar variables definidas
+      ansible.builtin.fail:
+        msg: "Variable {{ item }} no ha sido definida. Revisar el inventario creado."
+      when: vars[item] is undefined
+      loop:
+        - ansible_host
+        - instance
+        - db2_failover_become_user
+  rescue:
+    - name: Error validando variables.
+      ansible.builtin.set_fact:
+        db2_failover_error_flag: true
+
+    - name: Variables no definidas
+      ansible.builtin.meta: end_play
+
+- name: Bloque para listar BDD en DCA
+  become: true
+  become_user: "{{ db2_failover_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Obtener bases de datos en DCA
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 list db directory"
+      args:
+        executable: /usr/bin/bash
+      register: db2_failover_bases_result
+      changed_when: false
+
+    - name: Parseo de variable listado bases de datos
+      ansible.builtin.set_fact:
+        db2_failover_bases: "{{ db2_failover_bases_result['stdout'] | regex_findall('Database alias\\s+= (.*)\\n') }}"
+      failed_when:
+        - db2_failover_bases_result is undefined or
+          db2_failover_bases_result['rc'] != 0
+  rescue:
+    - name: Error al obtener las bases de datos
+      ansible.builtin.set_fact:
+        db2_failover_error_message:
+          '{{ db2_failover_error_message + ["No se pudo obtener las bases de datos de la instancia en DCA."] }}'
+        db2_failover_error_flag: true
+
+    - name: Detener ejecución
+      ansible.builtin.fail:
+        msg: "{{ db2_failover_error_message }}"
+
+- name: Bloque para verificar rol de las bases
+  become: true
+  become_user: "{{ db2_failover_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Verificar rol de las bases en DCA
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 get db config for {{ item }}"
+      args:
+        executable: /usr/bin/bash
+      register: db2_failover_primary_result
+      loop: "{{ db2_failover_bases }}"
+      changed_when: false
+
+    - name: Parseo de variables de bases en DCA
+      ansible.builtin.set_fact:
+        db2_failover_parsed_primary: "{{ db2_failover_parsed_primary | default([]) + [item['stdout']] }}"
+      loop: "{{ db2_failover_primary_result['results'] }}"
+      loop_control:
+        label: "Parseando información de base {{ item.item }} en {{ inventory_hostname }}"
+      failed_when: db2_failover_primary_result is undefined
+
+    - name: Parseo de variable rol DCA
+      ansible.builtin.set_fact:
+        db2_failover_primary:
+          "{{ db2_failover_primary | default([]) +
+          [{'name': item | regex_findall('Database Configuration for Database (.*)\\n') | first,
+          'state': item | regex_findall('HADR database role\\s*= (.*)\\n') | first}] }}"
+      loop: "{{ db2_failover_parsed_primary | list }}"
+      loop_control:
+        label: "Parseando rol de base {{ item | regex_findall('Database Configuration for Database (.*)\\n') | first }} en {{ inventory_hostname }}"
+
+    - name: Validar rol standby en DCA.
+      ansible.builtin.fail:
+        msg: |
+          La base {{ item.name }} en DCA ya es instancia PRIMARY.
+      when: item.state == "PRIMARY"
+      loop: "{{ db2_failover_primary | list }}"
+
+  rescue:
+    - name: Error validando rol de las bases en DCA.
+      ansible.builtin.fail:
+        msg: No se ha podido verificar el rol de la instancia en DCA.
+      when: db2_failover_primary_result is undefined
+
+    - name: Error validando rol primario en DCA.
+      ansible.builtin.fail:
+        msg: "La base en DCA se encuentra en estado PRIMARY."
+
+- name: Bloque para cambio de rol
+  become: true
+  become_user: "{{ db2_failover_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Realizar cambio de rol por cada base
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 takeover hadr on database {{ item.name }} by force"
+      args:
+        executable: /usr/bin/bash
+      register: db2_failover_movimiento
+      loop: "{{ db2_failover_primary }}"
+      changed_when: "'DB20000I' in db2_failover_movimiento['stdout']"
+      failed_when: "'DB20000I' not in db2_failover_movimiento['stdout']"
+      when:
+        - item.state != "STANDARD"
+        - item.state != "PRIMARY"
+  rescue:
+    - name: Error durante el movimiento.
+      ansible.builtin.set_fact:
+        db2_failover_error_flag_post: true
+
+    - name: Error durante el movimiento.
+      ansible.builtin.fail:
+        msg: |
+          No se ha podido realizar el movimiento. El error reportado es:
+          "{{ db2_failover_movimiento['stdout'] }}"
+
+- name: Bloque para parseo de variables post movimiento
+  become: true
+  become_user: "{{ db2_failover_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname not in groups['dcp']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Verificar rol de la base despues del movimiento
+      ansible.builtin.shell:
+        cmd: "~/sqllib/bin/db2 get db config for {{ item }}"
+      args:
+        executable: /usr/bin/bash
+      register: db2_failover_primary_post_result
+      loop: "{{ db2_failover_bases }}"
+      changed_when: false
+
+    - name: Parseo de variables de bases post movimiento.
+      ansible.builtin.set_fact:
+        db2_failover_parsed_primary_post: "{{ db2_failover_parsed_primary_post | default([]) + [item['stdout']] }}"
+      loop: "{{ db2_failover_primary_post_result['results'] }}"
+      loop_control:
+        label: "Parseando información de base {{ item.item }} en {{ inventory_hostname }}"
+      failed_when: db2_failover_primary_post_result is undefined
+
+    - name: Parseo de variable rol post movimiento.
+      ansible.builtin.set_fact:
+        db2_failover_primary_post:
+          "{{ db2_failover_primary_post | default([]) +
+          [{'name': item | regex_findall('Database Configuration for Database (.*)\\n') | first,
+          'state': item | regex_findall('HADR database role\\s*= (.*)\\n') | first}] }}"
+      loop: "{{ db2_failover_parsed_primary_post | list }}"
+      loop_control:
+        label: "Parseando rol de base {{ item | regex_findall('Database Configuration for Database (.*)\\n') | first }} en {{ inventory_hostname }}"
+
+  rescue:
+    - name: Error validando rol primario.
+      ansible.builtin.fail:
+        msg: No se ha podido verificar el rol de la instancia.
+      when: db2_failover_primary_post_result is undefined
+
+- name: Bloque para revisar roles post movimiento
+  become: true
+  become_user: "{{ db2_failover_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups[instance]
+    - inventory_hostname not in groups['dcp']
+  block:
+    - name: Validar rol primary en DCA post movimiento.
+      ansible.builtin.fail:
+        msg: |
+          La base {{ item.name }} en DCA NO ES INSTANCIA PRIMARY.
+          Se ejecutó el failover pero no se realizó el cambio de rol.
+      when:
+        - item.state != "PRIMARY"
+        - inventory_hostname in groups['dca']
+      loop: "{{ db2_failover_primary_post | list }}"
+
+    - name: Validar rol standard post movimiento.
+      ansible.builtin.fail:
+        msg: |
+          La base {{ item.name }} NO ES INSTANCIA STANDBY después del movimiento.
+          Se ejecutó el failover pero no se realizó el cambio de rol.
+      when:
+        - inventory_hostname not in groups['dca']
+        - item.state != "STANDBY"
+        - item.state != "STANDARD"
+      loop: "{{ db2_failover_primary_post | list }}"
+
+  rescue:
+    - name: Error validando rol primary en DCA post movimiento.
+      ansible.builtin.set_fact:
+        db2_failover_error_flag: true
+        db2_failover_error_message_post: "{{ db2_failover_error_message_post | default([]) +
+          ['El rol de la base después del movimiento no es el esperado.'] }}"
+
+- name: Bloque para revisar contenido de logs
+  become: true
+  become_user: "{{ db2_failover_become_user }}"
+  become_flags: "-i"
+  when:
+    - inventory_hostname in groups['dca']
+    - inventory_hostname in groups[instance]
+  block:
+    - name: Revisar el contenido de los logs de la instancia
+      ansible.builtin.shell:
+        cmd: 'set -o pipefail && ~/sqllib/bin/db2diag -level "Severe, Error" -H 5m | ~/sqllib/bin/db2diag -fmt "Time: %{ts} %{level} : @{msg}\n"'
+      args:
+        executable: /usr/bin/bash
+      register: db2_failover_logs_result
+      changed_when: false
+      failed_when: db2_failover_logs_result['stdout'] != ""
+  rescue:
+    - name: Error en logs
+      ansible.builtin.set_fact:
+        db2_failover_error_message_post:
+          '{{ db2_failover_error_message_post +
+          ["Existen logs de error/severe en las bases de datos de la instancia en DCA."] }}'
+        db2_failover_error_flag_post: true
+
+- name: Imprimiendo errores post movimiento
+  ansible.builtin.fail:
+    msg: "{{ db2_failover_error_message_post | list }}"
+  when: db2_failover_error_flag_post
+...

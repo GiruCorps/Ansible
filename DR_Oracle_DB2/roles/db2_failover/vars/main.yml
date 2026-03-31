@@ -1,0 +1,6 @@
+---
+db2_failover_error_message: []
+db2_failover_error_flag: false
+db2_failover_error_message_post: []
+db2_failover_error_flag_post: false
+...
