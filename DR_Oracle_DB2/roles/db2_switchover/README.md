@@ -1,88 +1,231 @@
+# Ansible Automation: IBM Db2 HADR Switchover
 
-**Ansible Automation: IBM Db2 Disaster Recovery**
-======================================
+Automation role for performing controlled switchover operations on IBM Db2 instances using Ansible.  
+Designed for HADR-replicated databases running on AIX, moving workloads from DCP to DCA.
 
-## **Use Case Description**  
+---
 
-This collection enables performing switchover, switchback, failover, and readiness checks for a specific IBM Db2 instance. It is designed for databases replicated using HADR and deployed on AIX, across both DCP and DCA environments.  
+## 📌 Table of Contents
 
-## **Summary of Automated Steps**  
+- [Overview](#overview)
+- [Automated Workflow](#automated-workflow)
+- [Requirements](#requirements)
+- [Role Variables](#role-variables)
+- [License](#license)
 
-### *Failover (Disaster Recovery)*  
+---
 
-1. Verifies the roles of the secondary instance.  
-2. Executes a forced failover.  
-3. Performs post-failover validations (database roles and logs).  
-4. Displays any detected errors, if present.  
+## 🚀 Overview
 
-### *Readiness*  
+This role enables controlled **switchover operations** for IBM Db2 instances configured with:
 
-1. Verifies the roles of the instances (primary and standby).  
-2. Searches for error/severe logs in the database instance.  
-3. Confirms synchronization status for each database within the instance.  
-4. Verifies that synchronization is active and that logs remain consistent across both sites.  
-5. Displays a summary of findings in a final message.  
+- **HADR (High Availability Disaster Recovery)**
+- **AIX environments**
+- **DCP → DCA transition**
 
-### *Switchback (DCA to DCP)*  
+It ensures a safe and validated transition of database roles between primary and standby nodes.
 
-1. Verifies the roles of the instances (primary and standby).  
-2. Performs pre-switchback validations: log availability and synchronization, database synchronization status, and replica status.  
-3. Executes the switchback operation.  
-4. Performs post-switchback validations: generated error/severe logs and roles of running databases within the instance.  
-5. Reports any errors encountered during the process.  
+---
 
-### *Switchover (DCP to DCA)*  
+## ⚙️ Automated Workflow
 
-1. Verifies the roles of the instances (primary and standby).  
-2. Performs pre-switchover validations: log availability and synchronization, database synchronization status, and replica status.  
-3. Executes the switchover operation.  
-4. Performs post-switchover validations: generated error/severe logs and roles of running databases within the instance.  
-5. Reports any errors encountered during the process.  
+1. Validates instance roles (primary and standby)  
+2. Performs pre-switchover checks:
+   - Log availability and synchronization  
+   - Database synchronization status  
+   - Replica health  
+3. Executes the switchover  
+4. Performs post-switchover checks:
+   - Generated `error`/`severe` logs  
+   - Active database roles  
+5. Reports any detected issues  
 
-## **Requirements**  
+---
 
-These roles require:  
-- For proper execution of the readiness role, the appropriate tag must be included depending on the target environment (DCA or DCP).  
-- A connection user with sufficient privileges to switch to the database administrator user.  
-- Python version 2.7 or higher installed on the AIX server.  
+## 📋 Requirements
 
+- A connection user with privileges to switch (`su`) to the Db2 administrative user  
+- Python **2.7+** installed on the AIX server  
 
-**Automatizacion de Ansible: Switchover IBM Db2 HADR**
-======================================
+---
 
-## Descripcion del caso de uso
-Este rol permite realizar un Switchover (movimiento controlado) de una instancia específica de IBM Db2 para bases de datos replicadas mediante HADR, desplegadas sobre AIX, desde DCP hacia DCA.
+## ⚙️ Role Variables
 
-## Resumen de pasos automatizados
-1. Verifica los roles de las instancias (primaria y standby).
-2. Ejecuta comprobaciones previas al switchover: existencia y sincronización de logs, estado de la sincronización de las bases, estado de la(s) réplica(s).
-3. Realiza el switchover.
-4. Ejecuta comprobaciones posteriores al switchover: logs de `error`/`severe` generados, roles de las bases de datos en ejecución en la instancia.
-5. Presenta los posibles errores encontrados durante el proceso.
+> ⚠️ Note: Most variables are defined in `vars/main.yml`
 
-## Requisitos
-Este rol requiere:
-  - Usuario de conexión con privilegios para realizar `su` hacia el usuario administrador de la base de datos.
-  - Python versión 2.7 o superior instalado en el servidor AIX.
+### 🔹 Group Variables
 
-## Variables de rol
-*Pendiente de actualización*
+- `usuario`  
+  - Description: Db2 instance administrative user (typically matches the instance name)  
+  - Type: `string`  
+  - Required: **true**
 
-El rol define la mayoría de sus variables en `vars/main.yml`.
-Las variables adicionales son las siguientes:
+---
 
-***Variables de grupo:***
-* `usuario`: Contiene el nombre del usuario administrador de la instancia Db2 (usualmente el mismo nombre de la instancia)
-    - **Tipo**: stringP
-    - **Required**: True
+### 🔹 Inventory Variables
 
-***Variables de inventario:***
-* `ansible_host`: Corresponde a la dirección IP del servidor en el que se ejecuta IBM Db2, en IPv4
-    - **Tipo**: string
-    - **Values**: xxx.yyy.zzz.aaa
-    - **Required**: true
+- `ansible_host`  
+  - Description: Target server IP address (IPv4) where IBM Db2 is running  
+  - Type: `string`  
+  - Format: `xxx.yyy.zzz.aaa`  
+  - Required: **true**
 
-***Variables de ejecución:***
-* `instance`: Define el nombre de la instancia a la cual se va a afectar durante el switchover
-    - **Tipo**: string
-    - **Required**: True
+---
+
+### 🔹 Execution Variables
+
+- `instance`  
+  - Description: Name of the Db2 instance affected during the switchover  
+  - Type: `string`  
+  - Required: **true**
+
+---
+
+## 💡 Notes
+
+- Designed for safe, repeatable switchover operations  
+- Minimizes operational risk  
+- Ensures validation before and after execution  
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome:
+
+1. Fork the repository  
+2. Create a feature branch  
+3. Submit a pull request  
+
+---
+
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+You are free to:
+- Use  
+- Modify  
+- Distribute  
+
+Under the following conditions:
+- Derivative works must also be licensed under GPL v3  
+- Source code must be made available when distributing  
+
+See the [LICENSE](./LICENSE) file for full details.
+
+# Automatización con Ansible: Switchover IBM Db2 HADR
+
+Rol de automatización para ejecutar operaciones de switchover controlado en instancias de IBM Db2 utilizando Ansible.  
+Diseñado para bases de datos replicadas con HADR sobre AIX, realizando el cambio de DCP hacia DCA.
+
+---
+
+## 📌 Tabla de Contenidos
+
+- [Descripción General](#descripción-general)
+- [Flujo Automatizado](#flujo-automatizado)
+- [Requisitos](#requisitos)
+- [Variables del Rol](#variables-del-rol)
+- [Licencia](#licencia)
+
+---
+
+## 🚀 Descripción General
+
+Este rol permite ejecutar **operaciones de switchover controlado** para instancias de IBM Db2 configuradas con:
+
+- **HADR (High Availability Disaster Recovery)**  
+- **Entornos AIX**  
+- **Transición DCP → DCA**  
+
+Garantiza una transición segura y validada entre nodos primario y standby.
+
+---
+
+## ⚙️ Flujo Automatizado
+
+1. Valida los roles de las instancias (primaria y standby)  
+2. Ejecuta comprobaciones previas:
+   - Existencia y sincronización de logs  
+   - Estado de sincronización de las bases  
+   - Estado de las réplicas  
+3. Realiza el switchover  
+4. Ejecuta comprobaciones posteriores:
+   - Logs `error`/`severe` generados  
+   - Roles de las bases de datos  
+5. Reporta errores detectados  
+
+---
+
+## 📋 Requisitos
+
+- Usuario con privilegios para ejecutar `su` hacia el usuario administrador de Db2  
+- Python **2.7 o superior** instalado en el servidor AIX  
+
+---
+
+## ⚙️ Variables del Rol
+
+> ⚠️ Nota: La mayoría de variables están definidas en `vars/main.yml`
+
+### 🔹 Variables de grupo
+
+- `usuario`  
+  - Descripción: Usuario administrador de la instancia Db2  
+  - Tipo: `string`  
+  - Requerido: **true**
+
+---
+
+### 🔹 Variables de inventario
+
+- `ansible_host`  
+  - Descripción: Dirección IP del servidor donde se ejecuta IBM Db2  
+  - Tipo: `string`  
+  - Formato: `xxx.yyy.zzz.aaa`  
+  - Requerido: **true**
+
+---
+
+### 🔹 Variables de ejecución
+
+- `instance`  
+  - Descripción: Nombre de la instancia afectada durante el switchover  
+  - Tipo: `string`  
+  - Requerido: **true**
+
+---
+
+## 💡 Notas
+
+- Diseñado para operaciones seguras y repetibles  
+- Reduce riesgos operativos  
+- Garantiza validaciones antes y después de la ejecución  
+
+---
+
+## 🤝 Contribuciones
+
+Las contribuciones son bienvenidas:
+
+1. Realiza un fork  
+2. Crea una rama  
+3. Envía un pull request  
+
+---
+
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la **GNU General Public License v3.0 (GPL-3.0)**.
+
+Puedes:
+- Usar  
+- Modificar  
+- Distribuir  
+
+Bajo las siguientes condiciones:
+- Los trabajos derivados deben mantenerse bajo GPL v3  
+- El código fuente debe estar disponible al distribuir  
+
+Consulta el archivo [LICENSE](./LICENSE) para más detalles.

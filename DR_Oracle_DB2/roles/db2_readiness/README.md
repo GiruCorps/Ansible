@@ -1,41 +1,250 @@
-Automatizacion de Ansible: Comprobación de readiness IBM Db2
-======================================
+# Ansible Automation: IBM Db2 Readiness Validation
 
-## Descripcion del caso de uso
-Este rol permite realizar una comprobación del eestado de readiness (factibilidad de movimiento de un datacenter a otro) de una instancia específica de IBM Db2 para bases de datos replicadas mediante HADR, desplegadas sobre AIX. El rol incluye dos secciones definidas por diferentes `tags`, tanto para ejecución en DCA como en DCP.
+Automation role for validating the readiness state of IBM Db2 instances using Ansible.  
+Designed for HADR-replicated databases running on AIX, ensuring safe conditions for data center transitions between DCP and DCA.
 
-## Resumen de pasos automatizados
-1. Verifica los roles de las instancias (primaria y standby).
-2. Busca logs de `error`/`severe` en la instancia de base de datos.
-3. Confirma la sincronización de cada una de las bases presentes en la instancia.
-4. Verifica que la sincronización se esté realizando y que los logs se mantengan iguales en ambos sitios.
-5. Muestra las novedades en un mensaje final.
+---
 
-## Requisitos
-Este rol requiere:
-  - Para una correcta ejecución, se debe incluir el tag necesario para ejecución, ya sea en `DCA` o en `DCP`.
-  - Python versión 2.7 o superior instalado en el execution environment.
+## 📌 Table of Contents
 
-## Variables de rol
-El rol define la mayoría de sus variables en `vars/main.yml`.
-Las variables adicionales son las siguientes:
+- [Overview](#overview)
+- [Automated Workflow](#automated-workflow)
+- [Requirements](#requirements)
+- [Role Variables](#role-variables)
+- [Execution Tags](#execution-tags)
+- [License](#license)
 
-***Variables de grupo:***
-* `usuario`: Contiene el nombre del usuario administrador de la instancia Db2 (usualmente el mismo nombre de la instancia)
-    - **Tipo**: string
-    - **Required**: True
+---
 
-***Variables de inventario:***
-* `ansible_host`: Corresponde a la dirección IP del servidor en el que se ejecuta IBM Db2, en IPv4
-    - **Tipo**: string
-    - **Values**: xxx.yyy.zzz.aaa
-    - **Required**: true
+## 🚀 Overview
 
-***Variables de ejecución:***
-* `instance`: Define el nombre de la instancia a la cual se va a verificar la factibilidad de movimiento. Para esta comprobación, se puede utilizar el nombre de instancia `all`, el cual realizará la verificación en todos los servidores de los grupos primario (`dcp`) y secundario (`dca`).
-    - **Tipo**: string
-    - **Required**: True
+This role performs **readiness validation** to determine whether a Db2 instance is in a safe state to:
 
-***Tags de ejecucíon:***
-* `db2_readiness_DCP`: Ejecuta las tareas de verificación en una instancia cuyo rol primario está actualmente en DCP.
-* `db2_readiness_DCA`: Ejecuta las tareas de verificación en una instancia cuyo rol primario está actualmente en DCA.
+- Move workloads between data centers  
+- Execute switchover or failover operations  
+
+It supports execution in both **DCP** and **DCA** environments using dedicated tags.
+
+---
+
+## ⚙️ Automated Workflow
+
+1. Validates instance roles (primary and standby)  
+2. Scans for `error`/`severe` logs in the database instance  
+3. Confirms synchronization status of all databases  
+4. Verifies:
+   - Active synchronization  
+   - Log consistency across both sites  
+5. Outputs a summary of findings  
+
+---
+
+## 📋 Requirements
+
+- Proper execution requires selecting the appropriate tag:
+  - `DCP` or `DCA`  
+- Python **2.7+** installed in the execution environment  
+
+---
+
+## ⚙️ Role Variables
+
+> ⚠️ Most variables are defined in `vars/main.yml`
+
+### 🔹 Group Variables
+
+- `usuario`  
+  - Description: Db2 instance administrative user (typically matches the instance name)  
+  - Type: `string`  
+  - Required: **true**
+
+---
+
+### 🔹 Inventory Variables
+
+- `ansible_host`  
+  - Description: Target server IP address (IPv4) where IBM Db2 is running  
+  - Type: `string`  
+  - Format: `xxx.yyy.zzz.aaa`  
+  - Required: **true**
+
+---
+
+### 🔹 Execution Variables
+
+- `instance`  
+  - Description: Db2 instance name to validate  
+  - Special value: `all` → validates all instances across primary (`dcp`) and secondary (`dca`) groups  
+  - Type: `string`  
+  - Required: **true**
+
+---
+
+## 🏷️ Execution Tags
+
+- `db2_readiness_DCP`  
+  Executes validation for instances where the primary role is currently in **DCP**
+
+- `db2_readiness_DCA`  
+  Executes validation for instances where the primary role is currently in **DCA**
+
+---
+
+## 💡 Notes
+
+- Designed as a prerequisite validation step before DR operations  
+- Helps prevent unsafe transitions between environments  
+- Provides visibility into synchronization and system health  
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome:
+
+1. Fork the repository  
+2. Create a feature branch  
+3. Submit a pull request  
+
+---
+
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+You are free to:
+- Use  
+- Modify  
+- Distribute  
+
+Under the following conditions:
+- Derivative works must also be licensed under GPL v3  
+- Source code must be made available when distributing  
+
+See the [LICENSE](./LICENSE) file for full details.
+
+
+# Automatización con Ansible: Validación de Readiness IBM Db2
+
+Rol de automatización para validar el estado de readiness de instancias IBM Db2 utilizando Ansible.  
+Diseñado para bases de datos replicadas con HADR sobre AIX, asegurando condiciones seguras para movimientos entre DCP y DCA.
+
+---
+
+## 📌 Tabla de Contenidos
+
+- [Descripción General](#descripción-general)
+- [Flujo Automatizado](#flujo-automatizado)
+- [Requisitos](#requisitos)
+- [Variables del Rol](#variables-del-rol)
+- [Tags de Ejecución](#tags-de-ejecución)
+- [Licencia](#licencia)
+
+---
+
+## 🚀 Descripción General
+
+Este rol permite realizar una **validación de readiness** para determinar si una instancia Db2 está en condiciones seguras para:
+
+- Mover cargas entre datacenters  
+- Ejecutar operaciones de switchover o failover  
+
+Soporta ejecución en entornos **DCP** y **DCA** mediante el uso de tags específicos.
+
+---
+
+## ⚙️ Flujo Automatizado
+
+1. Valida los roles de las instancias (primaria y standby)  
+2. Busca logs de `error`/`severe` en la instancia  
+3. Confirma la sincronización de todas las bases de datos  
+4. Verifica:
+   - Sincronización activa  
+   - Consistencia de logs entre ambos sitios  
+5. Muestra un resumen de resultados  
+
+---
+
+## 📋 Requisitos
+
+- Se debe seleccionar el tag adecuado para la ejecución:
+  - `DCP` o `DCA`  
+- Python **2.7 o superior** en el entorno de ejecución  
+
+---
+
+## ⚙️ Variables del Rol
+
+> ⚠️ La mayoría de variables están definidas en `vars/main.yml`
+
+### 🔹 Variables de grupo
+
+- `usuario`  
+  - Descripción: Usuario administrador de la instancia Db2  
+  - Tipo: `string`  
+  - Requerido: **true**
+
+---
+
+### 🔹 Variables de inventario
+
+- `ansible_host`  
+  - Descripción: Dirección IP del servidor donde se ejecuta IBM Db2  
+  - Tipo: `string`  
+  - Formato: `xxx.yyy.zzz.aaa`  
+  - Requerido: **true**
+
+---
+
+### 🔹 Variables de ejecución
+
+- `instance`  
+  - Descripción: Nombre de la instancia a validar  
+  - Valor especial: `all` → valida todas las instancias en grupos primario (`dcp`) y secundario (`dca`)  
+  - Tipo: `string`  
+  - Requerido: **true**
+
+---
+
+## 🏷️ Tags de ejecución
+
+- `db2_readiness_DCP`  
+  Ejecuta validación para instancias cuyo rol primario está en **DCP**
+
+- `db2_readiness_DCA`  
+  Ejecuta validación para instancias cuyo rol primario está en **DCA**
+
+---
+
+## 💡 Notas
+
+- Diseñado como validación previa a operaciones de DR  
+- Previene transiciones inseguras entre entornos  
+- Proporciona visibilidad sobre sincronización y estado del sistema  
+
+---
+
+## 🤝 Contribuciones
+
+Las contribuciones son bienvenidas:
+
+1. Realiza un fork  
+2. Crea una rama  
+3. Envía un pull request  
+
+---
+
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la **GNU General Public License v3.0 (GPL-3.0)**.
+
+Puedes:
+- Usar  
+- Modificar  
+- Distribuir  
+
+Bajo las siguientes condiciones:
+- Los trabajos derivados deben mantenerse bajo GPL v3  
+- El código fuente debe estar disponible al distribuir  
+
+Consulta el archivo [LICENSE](./LICENSE) para más detalles.

@@ -3,6 +3,21 @@
 Automation framework for managing disaster recovery operations on IBM Db2 using Ansible.  
 Supports HADR-based replicated databases running on AIX across DCP and DCA environments.
 
+## 🎯 Project Value
+
+This project demonstrates how to automate end-to-end disaster recovery for IBM Db2 environments using Ansible.
+
+### 🔥 Key Outcomes
+
+- Reduced manual intervention in DR operations
+- Standardized failover and switchover procedures
+- Improved recovery time and operational reliability
+- Eliminated human error in critical scenarios
+
+## 🌎 Other Languages
+
+- Spanish version available in [README.es.md](README.es.md)
+
 ---
 
 ## 📌 Table of Contents
@@ -127,133 +142,3 @@ Under the following conditions:
 - Source code must be made available when distributing  
 
 See the [LICENSE](./LICENSE) file for full details.
-
-# Automatización con Ansible: Disaster Recovery IBM Db2
-
-Framework de automatización para gestionar operaciones de recuperación ante desastres en IBM Db2 utilizando Ansible.  
-Soporta bases de datos replicadas con HADR ejecutándose sobre AIX en entornos DCP y DCA.
-
----
-
-## 📌 Tabla de Contenidos
-
-- [Descripción General](#descripción-general)
-- [Operaciones Automatizadas](#operaciones-automatizadas)
-  - [Failover (Disaster Recovery)](#failover-disaster-recovery)
-  - [Readiness](#readiness)
-  - [Switchback (DCA → DCP)](#switchback-dca--dcp)
-  - [Switchover (DCP → DCA)](#switchover-dcp--dca)
-- [Requisitos](#requisitos)
-- [Licencia](#licencia)
-
----
-
-## 🚀 Descripción General
-
-Este proyecto permite automatizar:
-
-- Failover  
-- Switchover  
-- Switchback  
-- Validaciones de readiness  
-
-Diseñado para instancias de IBM Db2 configuradas con **HADR (High Availability Disaster Recovery)** sobre **AIX**, en entornos **DCP** y **DCA**.
-
----
-
-## ⚙️ Operaciones Automatizadas
-
-### 🔴 Failover (Disaster Recovery)
-
-1. Valida el rol de la instancia secundaria  
-2. Ejecuta un failover forzado  
-3. Realiza comprobaciones posteriores:
-   - Roles de bases de datos  
-   - Consistencia de logs  
-4. Reporta errores detectados  
-
----
-
-### 🟡 Readiness
-
-1. Valida los roles de las instancias (primaria y standby)  
-2. Busca logs de error/severe  
-3. Confirma el estado de sincronización de todas las bases  
-4. Verifica:
-   - Sincronización activa  
-   - Consistencia de logs entre sitios  
-5. Muestra un reporte consolidado  
-
----
-
-### 🔵 Switchback (DCA → DCP)
-
-1. Valida los roles de las instancias  
-2. Ejecuta comprobaciones previas:
-   - Existencia y sincronización de logs  
-   - Estado de sincronización de bases  
-   - Estado de réplicas  
-3. Ejecuta el switchback  
-4. Realiza comprobaciones posteriores:
-   - Logs de error/severe  
-   - Roles de bases de datos  
-5. Reporta errores encontrados  
-
----
-
-### 🟢 Switchover (DCP → DCA)
-
-1. Valida los roles de las instancias  
-2. Ejecuta comprobaciones previas:
-   - Existencia y sincronización de logs  
-   - Estado de sincronización de bases  
-   - Estado de réplicas  
-3. Ejecuta el switchover  
-4. Realiza comprobaciones posteriores:
-   - Logs de error/severe  
-   - Roles de bases de datos  
-5. Reporta errores encontrados  
-
----
-
-## 📋 Requisitos
-
-- Uso de tags adecuados para ejecutar readiness según el entorno (**DCA** o **DCP**)  
-- Usuario con privilegios para cambiar al usuario administrador de Db2  
-- Python **2.7 o superior** instalado en el servidor AIX  
-
----
-
-## 💡 Notas
-
-- Diseñado para confiabilidad y repetibilidad  
-- Reduce errores humanos en operaciones críticas  
-- Garantiza consistencia en procesos de DR  
-
----
-
-## 🤝 Contribuciones
-
-Las contribuciones son bienvenidas.  
-Sigue el flujo estándar de GitHub:
-
-1. Haz un fork del repositorio  
-2. Crea una rama  
-3. Envía un pull request  
-
----
-
-## 📄 Licencia
-
-Este proyecto está licenciado bajo la **GNU General Public License v3.0 (GPL-3.0)**.
-
-Puedes:
-- Usar  
-- Modificar  
-- Distribuir  
-
-Bajo las siguientes condiciones:
-- Los trabajos derivados deben mantenerse bajo GPL v3  
-- El código fuente debe estar disponible al distribuir  
-
-Consulta el archivo [LICENSE](./LICENSE) para más detalles.

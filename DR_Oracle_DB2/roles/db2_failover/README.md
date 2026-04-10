@@ -1,41 +1,221 @@
-Automatizacion de Ansible: Failover (Disaster Recovery) IBM Db2
-======================================
+# Ansible Automation: IBM Db2 HADR Failover (Disaster Recovery)
 
-## Descripcion del caso de uso
-Este rol permite realizar failover de una instancia específica de IBM Db2 para bases de datos replicadas mediante HADR, desplegadas sobre AIX, en caso de una falla en la instancia ejecutándose en DCP.
+Automation role for executing failover operations on IBM Db2 instances using Ansible.  
+Designed for HADR-replicated databases running on AIX, handling failure scenarios in DCP environments.
 
-## Resumen de pasos automatizados
-1. Verifica el rol de la instancia en DCA (debería tener rol STANDBY).
-2. Realiza el failover forzado.
-3. Ejecuta comprobaciones posteriores al failover.
-4. Verifica el rol de la(s) base(s) primaria(s).
-5. Muestra posibles errores en caso de existir.
+---
 
-## Requisitos
-Este rol requiere:
-  - Usuario de conexión con privilegios para realizar `su` hacia el usuario administrador de la base de datos.
-  - Python versión 2.7 o superior instalado en el servidor AIX.
+## 📌 Table of Contents
 
-## Variables de rol
-*Pendiente de actualización*
+- [Overview](#overview)
+- [Automated Workflow](#automated-workflow)
+- [Requirements](#requirements)
+- [Role Variables](#role-variables)
+- [License](#license)
 
-El rol define la mayoría de sus variables en `vars/main.yml`.
-Las variables adicionales son las siguientes:
+---
 
-***Variables de grupo:***
-* `usuario`: Contiene el nombre del usuario administrador de la instancia Db2 (usualmente el mismo nombre de la instancia)
-    - **Tipo**: string
-    - **Required**: True
+## 🚀 Overview
 
-***Variables de inventario:***
-* `ansible_host`: Corresponde a la dirección IP del servidor en el que se ejecuta IBM Db2, en IPv4
-    - **Tipo**: string
-    - **Values**: xxx.yyy.zzz.aaa
-    - **Required**: true
+This role enables **failover (disaster recovery)** for IBM Db2 instances configured with:
 
-***Variables de ejecución:***
-* `instance`: Define el nombre de la instancia a la cual se va a afectar durante el failover
-    - **Tipo**: string
-    - **Required**: True
+- **HADR (High Availability Disaster Recovery)**
+- **AIX environments**
+- **DCP → DCA failover scenarios**
 
-En el directorio inventories existe un inventario con un ejemplo para la creación del mismo.
+It is intended for situations where the primary instance in **DCP** becomes unavailable and requires promotion of the standby instance in **DCA**.
+
+---
+
+## ⚙️ Automated Workflow
+
+1. Validates the role of the instance in DCA (expected: `STANDBY`)  
+2. Executes a **forced failover**  
+3. Performs post-failover validations  
+4. Verifies the role of primary database(s)  
+5. Reports any detected errors  
+
+---
+
+## 📋 Requirements
+
+- A connection user with privileges to switch (`su`) to the Db2 administrative user  
+- Python **2.7+** installed on the AIX server  
+
+---
+
+## ⚙️ Role Variables
+
+> ⚠️ Most variables are defined in `vars/main.yml`
+
+### 🔹 Group Variables
+
+- `usuario`  
+  - Description: Db2 instance administrative user (typically matches the instance name)  
+  - Type: `string`  
+  - Required: **true**
+
+---
+
+### 🔹 Inventory Variables
+
+- `ansible_host`  
+  - Description: Target server IP address (IPv4) where IBM Db2 is running  
+  - Type: `string`  
+  - Format: `xxx.yyy.zzz.aaa`  
+  - Required: **true**
+
+---
+
+### 🔹 Execution Variables
+
+- `instance`  
+  - Description: Name of the Db2 instance affected during failover  
+  - Type: `string`  
+  - Required: **true**
+
+---
+
+## 💡 Notes
+
+- Designed for critical failure scenarios  
+- Enables fast and consistent recovery  
+- Reduces manual intervention during outages  
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome:
+
+1. Fork the repository  
+2. Create a feature branch  
+3. Submit a pull request  
+
+---
+
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+You are free to:
+- Use  
+- Modify  
+- Distribute  
+
+Under the following conditions:
+- Derivative works must also be licensed under GPL v3  
+- Source code must be made available when distributing  
+
+See the [LICENSE](./LICENSE) file for full details.
+
+# Automatización con Ansible: Failover (Disaster Recovery) IBM Db2
+
+Rol de automatización para ejecutar operaciones de failover en instancias de IBM Db2 utilizando Ansible.  
+Diseñado para bases de datos replicadas con HADR sobre AIX, gestionando escenarios de falla en entornos DCP.
+
+---
+
+## 📌 Tabla de Contenidos
+
+- [Descripción General](#descripción-general)
+- [Flujo Automatizado](#flujo-automatizado)
+- [Requisitos](#requisitos)
+- [Variables del Rol](#variables-del-rol)
+- [Licencia](#licencia)
+
+---
+
+## 🚀 Descripción General
+
+Este rol permite ejecutar **failover (disaster recovery)** para instancias de IBM Db2 configuradas con:
+
+- **HADR (High Availability Disaster Recovery)**  
+- **Entornos AIX**  
+- **Escenarios de failover DCP → DCA**  
+
+Está diseñado para situaciones donde la instancia primaria en **DCP** falla y se requiere promover la instancia standby en **DCA**.
+
+---
+
+## ⚙️ Flujo Automatizado
+
+1. Valida el rol de la instancia en DCA (esperado: `STANDBY`)  
+2. Ejecuta un **failover forzado**  
+3. Realiza validaciones posteriores al failover  
+4. Verifica el rol de las bases de datos primarias  
+5. Reporta errores detectados  
+
+---
+
+## 📋 Requisitos
+
+- Usuario con privilegios para ejecutar `su` hacia el usuario administrador de Db2  
+- Python **2.7 o superior** instalado en el servidor AIX  
+
+---
+
+## ⚙️ Variables del Rol
+
+> ⚠️ La mayoría de variables están definidas en `vars/main.yml`
+
+### 🔹 Variables de grupo
+
+- `usuario`  
+  - Descripción: Usuario administrador de la instancia Db2  
+  - Tipo: `string`  
+  - Requerido: **true**
+
+---
+
+### 🔹 Variables de inventario
+
+- `ansible_host`  
+  - Descripción: Dirección IP del servidor donde se ejecuta IBM Db2  
+  - Tipo: `string`  
+  - Formato: `xxx.yyy.zzz.aaa`  
+  - Requerido: **true**
+
+---
+
+### 🔹 Variables de ejecución
+
+- `instance`  
+  - Descripción: Nombre de la instancia a afectar durante el failover  
+  - Tipo: `string`  
+  - Requerido: **true**
+
+---
+
+## 💡 Notas
+
+- Diseñado para escenarios críticos de falla  
+- Permite recuperación rápida y consistente  
+- Reduce la intervención manual durante incidentes  
+
+---
+
+## 🤝 Contribuciones
+
+Las contribuciones son bienvenidas:
+
+1. Realiza un fork  
+2. Crea una rama  
+3. Envía un pull request  
+
+---
+
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la **GNU General Public License v3.0 (GPL-3.0)**.
+
+Puedes:
+- Usar  
+- Modificar  
+- Distribuir  
+
+Bajo las siguientes condiciones:
+- Los trabajos derivados deben mantenerse bajo GPL v3  
+- El código fuente debe estar disponible al distribuir  
+
+Consulta el archivo [LICENSE](./LICENSE) para más detalles.
