@@ -29,11 +29,12 @@ This project demonstrates how to automate end-to-end disaster recovery for IBM D
   - [Switchback (DCA → DCP)](#switchback-dca--dcp)
   - [Switchover (DCP → DCA)](#switchover-dcp--dca)
 - [Requirements](#requirements)
+- [Notes](#notes)
 - [License](#license)
 
 ---
 
-## 🚀 Overview
+## <a id="overview"></a> 🚀 Overview
 
 This project provides automation for:
 
@@ -46,9 +47,9 @@ Designed for IBM Db2 instances configured with **HADR (High Availability Disaste
 
 ---
 
-## ⚙️ Automated Operations
+## <a id="automated-operations"></a>⚙️ Automated Operations
 
-### 🔴 Failover (Disaster Recovery)
+### <a id="failover-disaster-recovery"></a>🔴 Failover (Disaster Recovery)
 
 1. Validates the role of the secondary instance  
 2. Executes a forced failover  
@@ -59,7 +60,7 @@ Designed for IBM Db2 instances configured with **HADR (High Availability Disaste
 
 ---
 
-### 🟡 Readiness
+### <a id="readiness"></a>🟡 Readiness
 
 1. Validates instance roles (primary and standby)  
 2. Scans for error/severe logs  
@@ -71,7 +72,7 @@ Designed for IBM Db2 instances configured with **HADR (High Availability Disaste
 
 ---
 
-### 🔵 Switchback (DCA → DCP)
+### <a id="switchback-dca--dcp"></a>🔵 Switchback (DCA → DCP)
 
 1. Validates instance roles  
 2. Performs pre-checks:
@@ -86,7 +87,7 @@ Designed for IBM Db2 instances configured with **HADR (High Availability Disaste
 
 ---
 
-### 🟢 Switchover (DCP → DCA)
+### <a id="switchover-dcp--dca"></a>🟢 Switchover (DCP → DCA)
 
 1. Validates instance roles  
 2. Performs pre-checks:
@@ -101,7 +102,7 @@ Designed for IBM Db2 instances configured with **HADR (High Availability Disaste
 
 ---
 
-## 📋 Requirements
+## <a id="requirements"></a>📋 Requirements
 
 - Proper tagging must be applied for readiness execution depending on the target environment (**DCA** or **DCP**)  
 - A connection user with privileges to switch to the Db2 administrative user  
@@ -109,8 +110,9 @@ Designed for IBM Db2 instances configured with **HADR (High Availability Disaste
 
 ---
 
-## 💡 Notes
-
+## <a id="notes"></a>💡 Notes
+- Always execute readiness validation before DR operations
+- Ensure correct environment targeting (DCP/DCA)
 - Designed for reliability and repeatability  
 - Reduces human error during critical operations  
 - Ensures consistent execution of DR procedures  
@@ -128,7 +130,7 @@ Please follow standard GitHub workflow:
 
 ---
 
-## 📄 License
+## <a id="readiness"></a>📄 License
 
 This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
 
